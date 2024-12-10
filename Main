@@ -24,10 +24,7 @@ const int mqtt_port = 1883; // Port : 1883 dans le cas d'une liaison non sécuri
 WiFiClient espClient; 
 PubSubClient client(espClient); 
 
-// Paramètres WiFi (A COMPLETER)
-#define EAP_IDENTITY "nassim.bouchentouf@etu.univ-amu.fr"
-#define EAP_PASSWORD "Nbo9582." 
-#define EAP_USERNAME "nassim.bouchentouf@etu.univ-amu.fr" 
+// Paramètres WiFi (A COMPLETER) 
 const char* ssid = "XXXX"; // Nom du réseau
 const char* password = "XXXX"; // MDP du réseau
 
