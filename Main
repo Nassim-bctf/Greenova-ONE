@@ -1,0 +1,271 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#include <MCMVoltSense.h>
+#include <Arduino.h>
+#include "PubSubClient.h"
+#include "WiFi.h"
+#include "esp_wpa2.h"
+#include "MCMVoltSense.h"  
+
+// Paramètres MQTT Broker (A COMPLETER)
+
+//const char *mqtt_broker = "broker.hivemq.com"; 
+const char *mqtt_broker = "172.23.154.46"; // Identifiant du broker (Adresse IP)
+const char *topic1 = "température";
+const char *topic2 = "humidité";
+const char *topic4 = "Puissance apparente";
+const char *topic5 = "Puissance active";
+const char *topic6 = "Puissance réactive"; 
+const char *mqtt_username = ""; // Identifiant dans le cas d'une liaison sécurisée
+const char *mqtt_password = ""; // Mdp dans le cas d'une liaison sécurisée
+const int mqtt_port = 1883; // Port : 1883 dans le cas d'une liaison non sécurisée et 8883 dans le cas d'une liaison cryptée
+WiFiClient espClient; 
+PubSubClient client(espClient); 
+
+// Paramètres EDUROAM (A COMPLETER)
+#define EAP_IDENTITY "nassim.bouchentouf@etu.univ-amu.fr"
+#define EAP_PASSWORD "Nbo9582." 
+#define EAP_USERNAME "nassim.bouchentouf@etu.univ-amu.fr" 
+const char* ssid = "eduroam"; // eduroam SSID
+
+#define ACTectionRange 5      // Plage de détection du capteur (5A, 10A, 20A)
+#define VREF 5               // Référence de tension pour l'ESP32 (3.3V) */
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+// Définir la résolution de l'ADC (12 bits = 0-4095)
+#define ADC_RESOLUTION 4095
+
+// Fréquence de mesure pour obtenir la valeur RMS de la tension AC
+#define SAMPLE_COUNT 1000  // Nombre d'échantillons à prendre pour la moyenne
+#define AC_PEAK_TO_RMS_RATIO 0.707  // Le rapport entre la crête (peak) et la valeur RMS pour un signal sinusoïdal
+
+const int VPin = 32;  // Choisir la broche analogique (peut être 32, 34, 35, etc. sur l'ESP32)
+const int ACPin = 33;         // Choisissez une pin analogique valide sur l'ESP32
+
+float hum = 0;
+float temp = 0;
+float volt = 0;
+float amp = 0;
+float pui = 0;
+
+Adafruit_BME280 bme; // I2C
+
+
+// Fonction réception du message MQTT 
+void callback(char *topic, byte *payload, unsigned int length) { 
+  Serial.print("Le message a été envoyé sur le topic : "); 
+  Serial.println(topic); 
+  Serial.print("Message:"); 
+  for (int i = 0; i < length; i++) { 
+    Serial.print((char) payload[i]); 
+  } 
+  Serial.println(); 
+  Serial.println("-----------------------"); 
+}
+
+MCMmeter meter;
+
+void setup() {
+      Serial.begin(9600);
+
+  WiFi.disconnect(true);
+  WiFi.begin(ssid, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD); 
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(F("."));
+  }
+
+  Serial.println("");
+  Serial.println(F("L'ESP32 est connecté au WiFi !"));
+  
+// Connexion au broker MQTT  
+  
+  client.setServer(mqtt_broker, mqtt_port); 
+  client.setCallback(callback); 
+
+  while (!client.connected()) { 
+    String client_id = "esp32-client-"; 
+    client_id += String(WiFi.macAddress()); 
+    Serial.printf("La chaîne de mesure %s se connecte au broker MQTT", client_id.c_str()); 
+ 
+    if (client.connect(client_id.c_str(), mqtt_username, mqtt_password)) { 
+      Serial.println("La chaîne de mesure est connectée au broker."); 
+    } else { 
+      Serial.print("La chaîne de mesure n'a pas réussi à se connecter ... "); 
+      Serial.print(client.state()); 
+      delay(2000); 
+    } 
+  }
+
+meter.VoltageStp(32, 523.56, 1.7);  // Voltage: input pin, calibration, phase_shift
+
+
+  
+  // Si nécessaire, configurer la résolution ADC (par défaut à 12 bits)
+  analogReadResolution(12);
+
+    while(!Serial);    // time to get serial running
+    Serial.println(F("BME280 test"));
+
+    unsigned status;
+    
+    // default settings
+    status = bme.begin(0X76, &Wire);  
+    if (!status) {
+        Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
+        Serial.print("SensorID was: 0x"); Serial.println(bme.sensorID(),16);
+        Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
+        Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
+        Serial.print("        ID of 0x60 represents a BME 280.\n");
+        Serial.print("        ID of 0x61 represents a BME 680.\n");
+        while (1) delay(10);
+    }
+    
+    Serial.println("-- Default Test --");
+delay(1000);
+
+}
+
+
+void BME280() {
+temp = bme.readTemperature();
+    Serial.print("Temperature = ");
+    Serial.print(bme.readTemperature());
+    Serial.println(" °C");
+hum = bme.readHumidity();
+    Serial.print("Humidity = ");
+    Serial.print(bme.readHumidity());
+    Serial.println(" %");
+
+    Serial.println();
+    
+  client.publish(topic1, String(temp).c_str());
+  client.publish(topic2, String(hum).c_str()); 
+  client.subscribe(topic1);
+  client.subscribe(topic2); // S'abonne au topic pour recevoir des messages
+  client.loop(); // Gère les messages MQTT (pour lire la valeur de la température sur le moniteur série de platformIO)
+  delay(5000); // Pause de 5 secondes entre chaque envoi
+}
+
+float readACCurrentValue()
+{
+  float ACCurrtntValue = 0;
+  float peakVoltage = 0;  
+  float voltageVirtualValue = 0;  // Vrms
+
+  // Lire plusieurs échantillons pour obtenir une valeur moyenne
+  for (int i = 0; i < 5; i++)
+  {
+    peakVoltage += analogRead(ACPin);   // Lire la tension crête depuis le pin analogique
+    delay(1);  // Petite pause entre les lectures
+  }
+
+  peakVoltage = peakVoltage / 5.0;  // Moyenne des 5 lectures
+
+  // Conversion de la tension crête en tension efficace (Vrms = Vcrête * 0.707)
+  voltageVirtualValue = peakVoltage * 0.707;
+
+  // Mise à l'échelle en fonction de la résolution ADC (12 bits sur l'ESP32, plage de 0 à 4095)
+  voltageVirtualValue = (voltageVirtualValue / 4095.0 * VREF) / 2.0;  // Divisé par 2 à cause de l'amplification
+
+  // Calcul du courant en fonction de la plage de détection
+  ACCurrtntValue = voltageVirtualValue * ACTectionRange;
+
+  return ACCurrtntValue;
+}
+
+void Current() 
+{
+  float ACCurrentValue = readACCurrentValue(); 
+  amp = readACCurrentValue();
+  Serial.print(ACCurrentValue);  // Afficher la valeur du courant
+  Serial.println(" A");
+  delay(5000); // Pause de 5 secondes entre chaque envoi
+}
+
+void Voltage() {
+
+  meter.analogVoltage(40,2000);  // Measure the AC voltage. Arguments = (# of AC cycles, timeout)
+
+  float Vrms = meter.Vrms;       // Save the RMS Voltage into a variable.
+
+  Serial.print("Voltage: ");
+  Serial.print(Vrms,2);
+  Serial.println(" V");
+
+  delay(2000);
+}
+
+void Pmoy(){
+  float Pmoy = 0;
+  float Pact = 0;
+  float Preact = 0;
+  float phi = 0;
+  float ACCurrentValue = readACCurrentValue();
+  long sum = 0;
+  for (int i = 0; i < SAMPLE_COUNT; i++) {
+    sum += analogRead(VPin);  // Lire la valeur de l'ADC
+  }
+  // Calculer la moyenne des échantillons
+  float averageValue = sum / SAMPLE_COUNT;
+
+  // Convertir la valeur moyenne en tension (en utilisant la référence et la résolution de l'ADC)
+  float voltagePeak = (averageValue * VREF) / ADC_RESOLUTION;  // Calculer la tension crête (Peak Voltage)
+
+  // Convertir la tension crête en tension efficace (RMS)
+  float voltageRMS = voltagePeak * AC_PEAK_TO_RMS_RATIO;  // Utiliser le rapport entre crête et RMS (pour un signal sinusoïdal)
+
+  // Lire plusieurs échantillons pour obtenir une valeur moyenne
+  for (int i = 0; i < 10; i++)
+  {
+    Pmoy += ACCurrentValue* voltageRMS;
+    delay(1);  // Petite pause entre les lectures
+  }
+
+  Pmoy = Pmoy / 10.0;  // Moyenne des 5 lectures
+
+
+pui = Pmoy;
+
+Pact = cos(phi) * pui;
+Preact = sin(phi) * pui;
+
+  Serial.print("Pmoy =");
+  Serial.print(Pmoy, 3);
+  Serial.println(" W");
+  client.publish(topic4, String(Pmoy).c_str()); 
+  client.subscribe(topic4);
+  client.loop();
+  delay(5000);
+
+  Serial.print("Pact =");
+  Serial.print(Pact, 3);  
+  
+  Serial.println(" W");
+  client.publish(topic5, String(Pact).c_str()); 
+  client.subscribe(topic5); 
+  client.loop();
+  delay(5000);
+
+  Serial.print("Preact =");
+  Serial.print(Preact, 3);  
+  Serial.println(" W");
+  client.publish(topic6, String(Preact).c_str()); 
+  client.subscribe(topic6);
+  client.loop(); 
+  delay(5000); 
+}
+
+
+void loop() { 
+
+    BME280();
+   Current();
+    Voltage();
+    Pmoy();
+    delay(1000);
+}
+
