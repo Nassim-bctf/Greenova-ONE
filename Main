@@ -9,10 +9,10 @@
 #include "esp_wpa2.h"
 #include "MCMVoltSense.h"  
 
-// Paramètres MQTT Broker (A COMPLETER)
+// Paramètres MQTT Broker 
 
 //const char *mqtt_broker = "broker.hivemq.com"; 
-const char *mqtt_broker = "172.23.154.46"; // Identifiant du broker (Adresse IP)
+const char *mqtt_broker = "XXXX"; // Identifiant du broker (Adresse IPv4)
 const char *topic1 = "température";
 const char *topic2 = "humidité";
 const char *topic4 = "Puissance apparente";
@@ -24,11 +24,12 @@ const int mqtt_port = 1883; // Port : 1883 dans le cas d'une liaison non sécuri
 WiFiClient espClient; 
 PubSubClient client(espClient); 
 
-// Paramètres EDUROAM (A COMPLETER)
+// Paramètres WiFi (A COMPLETER)
 #define EAP_IDENTITY "nassim.bouchentouf@etu.univ-amu.fr"
 #define EAP_PASSWORD "Nbo9582." 
 #define EAP_USERNAME "nassim.bouchentouf@etu.univ-amu.fr" 
-const char* ssid = "eduroam"; // eduroam SSID
+const char* ssid = "XXXX"; // Nom du réseau
+const char* password = "XXXX"; // MDP du réseau
 
 #define ACTectionRange 5      // Plage de détection du capteur (5A, 10A, 20A)
 #define VREF 5               // Référence de tension pour l'ESP32 (3.3V) */
